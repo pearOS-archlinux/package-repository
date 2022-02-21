@@ -1,5 +1,5 @@
 all:
-	repo-add --verify --sign main.db.tar.gz *.pkg.tar.zst
+	repo-add --verify --sign main/x86_64/main.db.tar.gz main/x86_64/*.pkg.tar.zst
 	git add .
 	git commit -m "add packages"
 	git push
