@@ -1,0 +1,62 @@
+name: Sign new packages and push to R2
+
+on:
+  push:
+    branches: [ "main" ]
+    paths:
+      - "*.pkg.tar.zst"
+  workflow_dispatch:
+
+jobs:
+  sign-push:
+    runs-on: ubuntu-latest
+
+    container:
+      image: archlinux:latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install tools
+        run: |
+          pacman -Sy --noconfirm --needed pacman-contrib gnupg rclone git-lfs
+
+      - name: Pull LFS content
+        run: |
+          git lfs install --local
+          git lfs pull
+
+      - name: Import signing key
+        env:
+          GPG_PRIVATE_KEY: ${{ secrets.GPG_PRIVATE_KEY }}
+          GPG_PASSPHRASE: ${{ secrets.GPG_PASSPHRASE }}
+        run: |
+          echo "$GPG_PRIVATE_KEY" | gpg --batch --import
+          echo "$GPG_PASSPHRASE" > "$GITHUB_WORKSPACE/.gpg-passphrase"
+          chmod 600 "$GITHUB_WORKSPACE/.gpg-passphrase"
+
+      - name: Configure rclone (R2)
+        env:
+          R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          R2_ENDPOINT_URL: ${{ secrets.R2_ENDPOINT_URL }}
+        run: |
+          mkdir -p "${HOME}/.config/rclone"
+          cat > "${HOME}/.config/rclone/rclone.conf" <<EOF
+          [r2-pearos]
+          type = s3
+          provider = Cloudflare
+          access_key_id = ${R2_ACCESS_KEY_ID}
+          secret_access_key = ${R2_SECRET_ACCESS_KEY}
+          endpoint = ${R2_ENDPOINT_URL}
+          acl = private
+          EOF
+
+      - name: Sign, rebuild db, push to R2
+        run: |
+          chmod +x ./sign.sh
+          ./sign.sh
+
+      - name: Clean up passphrase
+        if: always()
+        run: rm -f "$GITHUB_WORKSPACE/.gpg-passphrase"
